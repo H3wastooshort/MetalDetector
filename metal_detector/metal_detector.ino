@@ -1,5 +1,6 @@
 #include <LiquidCrystal_I2C.h>
 #include <avr/interrupt.h>
+#include <avr/wdt.h>
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
@@ -10,7 +11,7 @@ uint8_t pulse_array_next = 0;
 uint16_t pulses_this_int = 0;  //how many pulses since the last timer interrupt
 #define TIMER_FREQ 10          //how often the timer int fires, in Hertz
 constexpr uint8_t TIMER_CMP =  //timer compare value. RESULT MUST BE SMALLER THAN 255, otherwise increase prescaler in setup()
-  (F_CPU /*cpu freq*/ / (4096 /*prescaler*/ * TIMER_FREQ /*timer freqency*/)) - 1;
+  (F_CPU /*cpu freq*/ / (4096L /*prescaler*/ * (uint16_t)TIMER_FREQ /*timer freqency*/)) - 1L;
 
 float freq_air = 0;
 float freq_iron = 0;
@@ -50,10 +51,10 @@ void do_cal() {
 
   lcd.home();
   lcd.clear();
-  lcd.print(F("Remove metal"));
+  lcd.print(F("Remove all metal"));
   lcd.setCursor(0, 1);
   lcd.print(F("from coil"));
-  while (!btn_flag) delay(1);  //wait for button press
+  while (!btn_flag) wdt_reset();  //wait for button press
   btn_flag = false;
   freq_air = get_freq();
 
@@ -62,7 +63,7 @@ void do_cal() {
   lcd.print(F("Add smallest obj."));
   lcd.setCursor(0, 1);
   lcd.print(F("to be detected"));
-  while (!btn_flag) delay(1);
+  while (!btn_flag) wdt_reset();
   btn_flag = false;
   freq_iron = get_freq();
 
@@ -73,12 +74,16 @@ void do_cal() {
 }
 
 void setup() {
+  wdt_enable(WDTO_8S);
   pinMode(1, INPUT_PULLUP);
   pinMode(3, INPUT);
 
   lcd.init();
+  lcd.clear();
+  lcd.home();
+  lcd.print(F("Setting up..."));
 
-  //freq measureing
+  /*//freq measureing
   cli();
   //enable pin change int
   GIMSK |= (1 << PCIE);
@@ -91,7 +96,7 @@ void setup() {
   TCNT1 = 0;
   OCR1C = TIMER_CMP;
   TIMSK |= (1 << OCIE1A);  //enable timer interrupt
-  sei();
+  sei();*/
 
   do_cal();
 }
@@ -99,8 +104,15 @@ void setup() {
 void draw_display() {
   //lcd.clear();
   lcd.home();
+  float freq = get_freq();
   char row1[17];
-  snprintf(row1, 17, "Freq: %8.3fHz", get_freq());
+  snprintf(row1, 17, "Freq: %8.3fHz", freq);
+
+  lcd.setCursor(0, 1);
+  uint8_t bars = map(freq, freq_air, freq_iron * 2, 0, 16);
+  for (uint8_t i = 1; i <= 16; i++)
+    if (i >= bars) lcd.write(255);
+    else lcd.write(' ');
 }
 
 void loop() {
@@ -111,4 +123,6 @@ void loop() {
   }
 
   if (btn_flag) do_cal();
+
+  wdt_reset();
 }

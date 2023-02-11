@@ -16,7 +16,7 @@ constexpr uint8_t TIMER_CMP =  //timer compare value. RESULT MUST BE SMALLER THA
 float freq_air = 0;
 float freq_iron = 0;
 
-ISR(PCINT3_vect) {
+ISR(PCINT0_vect) {
   pulses_this_int++;
 }
 
@@ -29,11 +29,14 @@ ISR(TIMER1_COMPA_vect) {
 
 bool btn_flag = false;
 uint32_t last_btn_down = 0;
-ISR(PCINT1_vect) {
-  if (millis() - last_btn_down > 50) {
-    last_btn_down = millis();
-    btn_flag = true;
-  }
+bool btn_was_down = false;
+void poll_btn() {
+  if (!digitalRead(1)) {
+    if (btn_was_down and millis() - last_btn_down > 50) {
+      last_btn_down = millis();
+      btn_flag = true;
+    }
+  } else btn_was_down = true;
 }
 
 float get_freq() {
@@ -54,7 +57,10 @@ void do_cal() {
   lcd.print(F("Remove all metal"));
   lcd.setCursor(0, 1);
   lcd.print(F("from coil"));
-  while (!btn_flag) wdt_reset();  //wait for button press
+  while (!btn_flag) {  //wait for button press
+    poll_btn();
+    wdt_reset();
+  }
   btn_flag = false;
   freq_air = get_freq();
 
@@ -63,7 +69,10 @@ void do_cal() {
   lcd.print(F("Add smallest obj."));
   lcd.setCursor(0, 1);
   lcd.print(F("to be detected"));
-  while (!btn_flag) wdt_reset();
+  while (!btn_flag) {  //wait for button press
+    poll_btn();
+    wdt_reset();
+  }
   btn_flag = false;
   freq_iron = get_freq();
 
@@ -83,12 +92,12 @@ void setup() {
   lcd.home();
   lcd.print(F("Setting up..."));
 
-  /*//freq measureing
+  //freq measureing
   cli();
   //enable pin change int
-  GIMSK |= (1 << PCIE);
+  /*GIMSK |= (1 << PCIE);
   PCMSK |= (1 << PCINT3);
-  PCMSK |= (1 << PCINT1);
+  PCMSK |= (1 << PCINT1);*/
   //enable timer interrtupt
   TCCR1 = 0;
   TCCR1 |= (1 << CTC1);       //enable clearing timer on compare
@@ -96,7 +105,7 @@ void setup() {
   TCNT1 = 0;
   OCR1C = TIMER_CMP;
   TIMSK |= (1 << OCIE1A);  //enable timer interrupt
-  sei();*/
+  sei();
 
   do_cal();
 }
@@ -107,6 +116,7 @@ void draw_display() {
   float freq = get_freq();
   char row1[17];
   snprintf(row1, 17, "Freq: %8.3fHz", freq);
+  lcd.print(row1);
 
   lcd.setCursor(0, 1);
   uint8_t bars = map(freq, freq_air, freq_iron * 2, 0, 16);
@@ -116,8 +126,10 @@ void draw_display() {
 }
 
 void loop() {
+  poll_btn();
+
   static uint32_t last_disp_update = 0;
-  if (millis() - last_disp_update > 1000) {
+  if (millis() - last_disp_update > 500) {
     last_disp_update = millis();
     draw_display();
   }

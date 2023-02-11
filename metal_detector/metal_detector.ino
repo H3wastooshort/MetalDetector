@@ -6,11 +6,11 @@
 #define SHORT_CLICK_TIME 50  //minimum time for a short click to register
 #define LONG_CLICK_TIME 500
 
-uint16_t pulse_array[30] = { 0 };  //ring buffer of latest pulsecounts
+uint32_t pulse_array[10] = { 0 };  //ring buffer of latest pulsecounts
 constexpr uint8_t pulse_array_length = sizeof(pulse_array) / sizeof(pulse_array[0]);
 uint8_t pulse_array_next = 0;
-uint16_t pulses_this_int = 0;  //how many pulses since the last timer interrupt
-#define TIMER_FREQ 1           //how often the timer int fires, in Hertz
+uint32_t pulses_this_int = 0;  //how many pulses since the last timer interrupt
+#define TIMER_FREQ 2           //how often the timer int fires, in Hertz
 constexpr uint8_t TIMER_CMP =  //timer compare value. RESULT MUST BE SMALLER THAN 255, otherwise increase prescaler in setup()
   (F_CPU /*cpu freq*/ / (16348L /*prescaler*/ * (uint16_t)TIMER_FREQ /*timer freqency*/)) - 1;
 
@@ -25,7 +25,8 @@ struct cal_data_s {
 uint8_t beep_flag = 2;  // 0 or 1 mean beep, 2 means off, 3 means passthru
 ISR(PCINT0_vect) {
   pulses_this_int++;
-  //if (beep_flag == 3) digitalWrite(4, digitalRead(3));
+  //if (beep_flag == 3) PORTB &= (0xFF & (uint8_t(PINB && 0b00001000) << 4 /*out pin*/)); //set bit for beeper to bit of freq input
+  if (beep_flag == 3) digitalWrite(4,digitalRead(3));
 }
 
 bool timer_test = false;
@@ -36,6 +37,7 @@ ISR(TIMER1_COMPA_vect) {
   pulse_array_next %= pulse_array_length;           //limit to array length. no buffer overflows here
 
   if (beep_flag < 2) {
+    beep_flag &= 1;
     beep_flag ^= 1;  //toggle LSB by XOR with 1
     digitalWrite(4, beep_flag);
   }
@@ -50,7 +52,7 @@ float get_pulses() {
     all_pulses += pulse_array[i];
   }
 
-  return all_pulses  / (double)pulse_array_length;  //divide by number of counts. now we have the average
+  return all_pulses / (double)pulse_array_length;  //divide by number of counts. now we have the average
 }
 
 uint32_t last_btn_down = 0;
@@ -105,7 +107,7 @@ void do_cal() {
 void setup() {
   wdt_enable(WDTO_8S);
   pinMode(1, INPUT_PULLUP);  //button
-  pinMode(3, INPUT);         //freq
+  pinMode(3, INPUT_PULLUP);  //freq
   pinMode(4, OUTPUT);        //speaker
   pinMode(5, OUTPUT);        //testing
 
@@ -120,7 +122,7 @@ void setup() {
   cli();
   //enable pin change int
   GIMSK |= (1 << PCIE);
-  PCMSK |= (1 << PCINT0);
+  PCMSK |= (1 << PCINT3);
   //enable timer interrtupt
   TCCR1 = 0;
   TCCR1 |= (1 << CTC1);       //enable clearing timer on compare
@@ -137,15 +139,16 @@ void setup() {
 void draw_display() {
   //lcd.clear();
   lcd.home();
-  float pulses = get_pulses();
+  uint32_t pulses = get_pulses();
+  //set custom chars 6 and 7 as diagram (TODO)
   char row1[17];
   //snprintf(row1, 17, "Freq: %8.3fHz", freq);
-  snprintf(row1, 17, "Freq: %7dmHz", pulses*10 /*/2) * TIMER_FREQ * 1000*/);
+  snprintf(row1, 17, "\x06\x07 Freq: %5luHz", (pulses / 2) * TIMER_FREQ);
   lcd.print(row1);
 
   lcd.setCursor(0, 1);
-  uint8_t bars = map(pulses, cal_data.pulses_air, cal_data.pulses_iron * 2, 0, 16);
-  for (uint8_t i = 1; i <= 16; i++) {
+  uint8_t bars = map(pulses, cal_data.pulses_air, cal_data.pulses_iron * 2, 16, 0);
+  for (uint8_t i = 16; i > 0; i--) {
     if (i >= bars) lcd.write(255);
     else lcd.write(' ');
   }

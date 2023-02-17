@@ -1,7 +1,10 @@
+//Compiled with ATtinyCore (ATtiny85, 16mHz PLL)
+
 #include <LiquidCrystal_I2C.h>
 #include <avr/interrupt.h>
 #include <avr/wdt.h>
 #include <EEPROM.h>
+#include "gfx.h"
 
 #define SHORT_CLICK_TIME 50  //minimum time for a short click to register
 #define LONG_CLICK_TIME 500
@@ -108,6 +111,13 @@ void setup() {
 
   lcd.init();
   Wire.setClock(400000);
+  lcd.createChar(1, gfx_pb_l0);
+  lcd.createChar(2, gfx_pb_l1);
+  lcd.createChar(3, gfx_pb_m0);
+  lcd.createChar(4, gfx_pb_m1);
+  lcd.createChar(5, gfx_pb_r0);
+  lcd.createChar(6, gfx_pb_r1);
+  lcd.createChar(7, gfx_pb_c);
   lcd.clear();
   lcd.home();
   lcd.print(F("Setting up..."));
@@ -135,26 +145,39 @@ void draw_display() {
   uint32_t pulses = get_pulses();
 
   if (pulses > 0) {
-    //set custom char 7 as diagram
+    //set custom char 0/8 as diagram
     byte graph_char[8] = { 0 };
+    uint32_t highest_pulse = 0, lowest_pulse = 0;
+
+    for (uint8_t i = 0; i < 5; i++) highest_pulse = max(highest_pulse, pulse_array[i]);
+    for (uint8_t i = 0; i < 5; i++) lowest_pulse = min(lowest_pulse, pulse_array[i]);
     for (uint8_t col = 0; col < 5; col++)
-      graph_char[max(min(map(pulse_array[col], cal_data.pulses_iron / 2, cal_data.pulses_air * 2, 0, 7), 7), 0)] =
+      graph_char[max(min(map(pulse_array[col], lowest_pulse, highest_pulse, 0, 7), 7), 0)] =
         (1 << (5 - col));
-    lcd.createChar(0x07, graph_char);
+    lcd.createChar(0, graph_char);
 
     //lcd.clear();
     lcd.home();
 
     char line1[17];
     //snprintf(row1, 17, "Freq: %8.3fHz", freq);
-    snprintf(line1, 17, "Freq: \x07 %6luHz", (pulses / 2) * TIMER_FREQ);
+    snprintf(line1, 17, "Freq: \x08 %6luHz", (pulses / 2) * TIMER_FREQ);
     lcd.print(line1);
 
     lcd.setCursor(0, 1);
     uint8_t bars = max(min(map(pulses, cal_data.pulses_air, cal_data.pulses_iron - (cal_data.pulses_air - cal_data.pulses_iron), 0, 16), 16), 0);
     for (uint8_t i = 1; i <= 16; i++) {
-      if (i > bars) lcd.write(i == 8 ? '|' : ' ');
-      else lcd.write(255);
+      if (i > bars) switch (i) {
+          default: lcd.write(3); break;
+          case 1: lcd.write(1); break;
+          case 8: lcd.write(7); break;
+          case 16: lcd.write(5); break;
+        }
+      else switch (i) {
+          default: lcd.write(4); break;
+          case 1: lcd.write(2); break;
+          case 16: lcd.write(6); break;
+        }
     }
 
     if (beep_flag != 3) {  //if passthru disabled

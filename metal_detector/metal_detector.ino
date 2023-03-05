@@ -47,6 +47,10 @@ float get_pulses() {
   return (double)all_pulses / (double)pulse_array_length;  //divide by number of measurements. now we have the average
 }
 
+float mapfloat(float x, float in_min, float in_max, float out_min, float out_max) { //the regulat map() from Arduino, but with floats
+  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
+
 uint32_t last_btn_down = 0;
 bool btn_was_down = false;
 /*
@@ -153,13 +157,11 @@ void draw_display() {
       freq_array_next %= freq_array_length;
 
       byte graph_char[8] = { 0 };
-      uint16_t highest_pulse = 0, lowest_pulse = 0;
+      float highest_pulse = 0, lowest_pulse = 0;
 
       for (uint8_t i = 0; i < 5; i++) highest_pulse = max(highest_pulse, freq_array[i]);
       for (uint8_t i = 0; i < 5; i++) lowest_pulse = min(lowest_pulse, freq_array[i]);
-      for (uint8_t col = 0; col < 5; col++)
-        graph_char[max(min(map(freq_array[col], lowest_pulse, highest_pulse, 0, 7), 7), 0)] =
-          (1 << (5 - col));
+      for (uint8_t col = 0; col < 5; col++) graph_char[max(min(round(mapfloat(freq_array[col], lowest_pulse, highest_pulse, 0, 7)), 7), 0)] |= (1 << (4 - col));
       lcd.createChar(0, graph_char);
 
 
